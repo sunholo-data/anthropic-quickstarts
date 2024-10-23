@@ -65,9 +65,10 @@ COPY image/nginx.conf /etc/nginx/nginx.conf
 # Copy the site-specific configuration
 COPY image/sites-available.conf /etc/nginx/sites-available/default
 
-# Create a symbolic link for the site configuration
-RUN ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
-
+# Check if the symbolic link exists, and if so, remove it before creating a new one
+RUN if [ -L /etc/nginx/sites-enabled/default ]; then rm -f /etc/nginx/sites-enabled/default; fi && \
+    ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+    
 # setup user
 ENV USERNAME=computeruse
 ENV HOME=/home/$USERNAME
