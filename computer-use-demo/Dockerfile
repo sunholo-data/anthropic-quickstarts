@@ -105,9 +105,6 @@ RUN mkdir -p /home/computeruse/nginx/body \
     /home/computeruse/nginx/scgi && \
     chown -R computeruse:computeruse /home/computeruse/nginx
 
-# Create symbolic link for Nginx configuration
-RUN ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
-
 # Optional: Create custom directories for Nginx logs
 RUN mkdir -p /home/computeruse/nginx/logs && \
     chown -R computeruse:computeruse /home/computeruse/nginx/logs
