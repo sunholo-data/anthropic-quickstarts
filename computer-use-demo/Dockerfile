@@ -18,7 +18,7 @@ RUN apt-get update && \
     x11vnc \
     # Python/pyenv reqs
     build-essential \
-    libssl-dev  \
+    libssl-dev \
     zlib1g-dev \
     libbz2-dev \
     libreadline-dev \
@@ -97,6 +97,22 @@ RUN python -m pip install -r $HOME/computer_use_demo/requirements.txt
 COPY --chown=$USERNAME:$USERNAME image/ $HOME
 COPY --chown=$USERNAME:$USERNAME computer_use_demo/ $HOME/computer_use_demo/
 
+# Create custom directories for Nginx temp files and set permissions
+RUN mkdir -p /home/computeruse/nginx/body \
+    /home/computeruse/nginx/proxy \
+    /home/computeruse/nginx/fastcgi \
+    /home/computeruse/nginx/uwsgi \
+    /home/computeruse/nginx/scgi && \
+    chown -R computeruse:computeruse /home/computeruse/nginx
+
+# Create symbolic link for Nginx configuration
+RUN ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+
+# Optional: Create custom directories for Nginx logs
+RUN mkdir -p /home/computeruse/nginx/logs && \
+    chown -R computeruse:computeruse /home/computeruse/nginx/logs
+
+# Set environment variables for display
 ARG DISPLAY_NUM=1
 ARG HEIGHT=768
 ARG WIDTH=1024
