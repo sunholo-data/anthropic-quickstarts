@@ -59,6 +59,15 @@ RUN git clone --branch v1.5.0 https://github.com/novnc/noVNC.git /opt/noVNC && \
     git clone --branch v0.12.0 https://github.com/novnc/websockify /opt/noVNC/utils/websockify && \
     ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html
 
+# Copy the global Nginx configuration
+COPY image/nginx.conf /etc/nginx/nginx.conf
+
+# Copy the site-specific configuration
+COPY image/sites-available.conf /etc/nginx/sites-available/default
+
+# Create a symbolic link for the site configuration
+RUN ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+
 # setup user
 ENV USERNAME=computeruse
 ENV HOME=/home/$USERNAME
@@ -102,12 +111,10 @@ RUN mkdir -p /home/computeruse/nginx/body \
     /home/computeruse/nginx/proxy \
     /home/computeruse/nginx/fastcgi \
     /home/computeruse/nginx/uwsgi \
-    /home/computeruse/nginx/scgi && \
-    chown -R computeruse:computeruse /home/computeruse/nginx
+    /home/computeruse/nginx/scgi
 
 # Optional: Create custom directories for Nginx logs
-RUN mkdir -p /home/computeruse/nginx/logs && \
-    chown -R computeruse:computeruse /home/computeruse/nginx/logs
+RUN mkdir -p /home/computeruse/nginx/logs
 
 # Set environment variables for display
 ARG DISPLAY_NUM=1
@@ -116,8 +123,5 @@ ARG WIDTH=1024
 ENV DISPLAY_NUM=$DISPLAY_NUM
 ENV HEIGHT=$HEIGHT
 ENV WIDTH=$WIDTH
-
-# Copy Nginx configuration
-COPY image/nginx.conf /etc/nginx/sites-available/default
 
 ENTRYPOINT [ "./entrypoint.sh" ]
