@@ -1,0 +1,393 @@
+--- Start of ./xvfb_startup.sh ---
+#!/bin/bash
+set -e  # Exit on error
+
+DPI=96
+RES_AND_DEPTH=${WIDTH}x${HEIGHT}x24
+
+# Function to check if Xvfb is already running
+check_xvfb_running() {
+    if [ -e /tmp/.X${DISPLAY_NUM}-lock ]; then
+        return 0  # Xvfb is already running
+    else
+        return 1  # Xvfb is not running
+    fi
+}
+
+# Function to check if Xvfb is ready
+wait_for_xvfb() {
+    local timeout=10
+    local start_time=$(date +%s)
+    while ! xdpyinfo >/dev/null 2>&1; do
+        if [ $(($(date +%s) - start_time)) -gt $timeout ]; then
+            echo "Xvfb failed to start within $timeout seconds" >&2
+            return 1
+        fi
+        sleep 0.1
+    done
+    return 0
+}
+
+# Check if Xvfb is already running
+if check_xvfb_running; then
+    echo "Xvfb is already running on display ${DISPLAY}"
+    exit 0
+fi
+
+# Start Xvfb
+Xvfb $DISPLAY -ac -screen 0 $RES_AND_DEPTH -retro -dpi $DPI -nolisten tcp -nolisten unix &
+XVFB_PID=$!
+
+# Wait for Xvfb to start
+if wait_for_xvfb; then
+    echo "Xvfb started successfully on display ${DISPLAY}"
+    echo "Xvfb PID: $XVFB_PID"
+else
+    echo "Xvfb failed to start"
+    kill $XVFB_PID
+    exit 1
+fi
+
+--- End of ./xvfb_startup.sh ---
+
+--- Start of ./index.html ---
+<!doctype html>
+<html>
+    <head>
+        <title>Computer Use Demo</title>
+        <meta name="permissions-policy" content="fullscreen=*" />
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+            }
+            .container {
+                display: flex;
+                height: 100vh;
+                width: 100vw;
+            }
+            .left {
+                flex: 1;
+                border: none;
+                height: 100vh;
+            }
+            .right {
+                flex: 2;
+                border: none;
+                height: 100vh;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <iframe
+                src="http://localhost:8501"
+                class="left"
+                allow="fullscreen"
+            ></iframe>
+            <iframe
+                src="http://localhost:6080/vnc.html?view_only=1&autoconnect=1&resize=scale"
+                class="right"
+                allow="fullscreen"
+            ></iframe>
+        </div>
+    </body>
+</html>
+
+--- End of ./index.html ---
+
+--- Start of ./x11vnc_startup.sh ---
+#!/bin/bash
+echo "starting vnc"
+
+(x11vnc -display $DISPLAY \
+    -forever \
+    -shared \
+    -wait 50 \
+    -timeout 60 \
+    -noxrecord \
+    -noxfixes \
+    -noxdamage \
+    -rfbport 5900 \
+    2>/tmp/x11vnc_stderr.log) &
+
+x11vnc_pid=$!
+
+# Wait for x11vnc to start
+timeout=10
+while [ $timeout -gt 0 ]; do
+    if netstat -tuln | grep -q ":5900 "; then
+        break
+    fi
+    sleep 1
+    ((timeout--))
+done
+
+if [ $timeout -eq 0 ]; then
+    echo "x11vnc failed to start, stderr output:" >&2
+    cat /tmp/x11vnc_stderr.log >&2
+    exit 1
+fi
+
+: > /tmp/x11vnc_stderr.log
+
+# Monitor x11vnc process in the background
+(
+    while true; do
+        if ! kill -0 $x11vnc_pid 2>/dev/null; then
+            echo "x11vnc process crashed, restarting..." >&2
+            if [ -f /tmp/x11vnc_stderr.log ]; then
+                echo "x11vnc stderr output:" >&2
+                cat /tmp/x11vnc_stderr.log >&2
+                rm /tmp/x11vnc_stderr.log
+            fi
+            exec "$0"
+        fi
+        sleep 5
+    done
+) &
+
+--- End of ./x11vnc_startup.sh ---
+
+--- Start of ./http_server.py ---
+import os
+import socket
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+
+
+class HTTPServerV6(HTTPServer):
+    address_family = socket.AF_INET6
+
+
+def run_server():
+    os.chdir(os.path.dirname(__file__) + "/static_content")
+    server_address = ("::", 8080)
+    httpd = HTTPServerV6(server_address, SimpleHTTPRequestHandler)
+    print("Starting HTTP server on port 8080...")  # noqa: T201
+    httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    run_server()
+
+--- End of ./http_server.py ---
+
+--- Start of ./start_all.sh ---
+#!/bin/bash
+
+set -e
+
+export DISPLAY=:${DISPLAY_NUM}
+./xvfb_startup.sh
+./tint2_startup.sh
+./mutter_startup.sh
+./x11vnc_startup.sh
+
+--- End of ./start_all.sh ---
+
+--- Start of ./novnc_startup.sh ---
+#!/bin/bash
+echo "starting noVNC"
+
+# Start noVNC with explicit websocket settings
+/opt/noVNC/utils/novnc_proxy \
+    --vnc localhost:5900 \
+    --listen 6080 \
+    --web /opt/noVNC \
+    > /tmp/novnc.log 2>&1 &
+
+# Wait for noVNC to start
+timeout=10
+while [ $timeout -gt 0 ]; do
+    if netstat -tuln | grep -q ":6080 "; then
+        break
+    fi
+    sleep 1
+    ((timeout--))
+done
+
+echo "noVNC started successfully"
+
+--- End of ./novnc_startup.sh ---
+
+--- Start of ./tint2_startup.sh ---
+#!/bin/bash
+echo "starting tint2 on display :$DISPLAY_NUM ..."
+
+# Start tint2 and capture its stderr
+tint2 -c $HOME/.config/tint2/tint2rc 2>/tmp/tint2_stderr.log &
+
+# Wait for tint2 window properties to appear
+timeout=30
+while [ $timeout -gt 0 ]; do
+    if xdotool search --class "tint2" >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+    ((timeout--))
+done
+
+if [ $timeout -eq 0 ]; then
+    echo "tint2 stderr output:" >&2
+    cat /tmp/tint2_stderr.log >&2
+    exit 1
+fi
+
+# Remove the temporary stderr log file
+rm /tmp/tint2_stderr.log
+
+--- End of ./tint2_startup.sh ---
+
+--- Start of ./entrypoint.sh ---
+#!/bin/bash
+set -e
+
+./start_all.sh
+./novnc_startup.sh
+
+python http_server.py > /tmp/server_logs.txt 2>&1 &
+
+STREAMLIT_SERVER_PORT=8501 python -m streamlit run computer_use_demo/streamlit.py > /tmp/streamlit_stdout.log &
+
+echo "✨ Computer Use Demo is ready!"
+echo "➡️  Open http://localhost:8080 in your browser to begin"
+
+# Keep the container running
+tail -f /dev/null
+
+--- End of ./entrypoint.sh ---
+
+--- Start of ./mutter_startup.sh ---
+echo "starting mutter"
+XDG_SESSION_TYPE=x11 mutter --replace --sm-disable 2>/tmp/mutter_stderr.log &
+
+# Wait for tint2 window properties to appear
+timeout=30
+while [ $timeout -gt 0 ]; do
+    if xdotool search --class "mutter" >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+    ((timeout--))
+done
+
+if [ $timeout -eq 0 ]; then
+    echo "mutter stderr output:" >&2
+    cat /tmp/mutter_stderr.log >&2
+    exit 1
+fi
+
+rm /tmp/mutter_stderr.log
+
+--- End of ./mutter_startup.sh ---
+
+--- Start of ./static_content/index.html ---
+<!doctype html>
+<html>
+    <head>
+        <title>Computer Use Demo</title>
+        <meta name="permissions-policy" content="fullscreen=*" />
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+            }
+            .container {
+                display: flex;
+                height: 100vh;
+                width: 100vw;
+            }
+            .left {
+                flex: 1;
+                border: none;
+                height: 100vh;
+            }
+            .right {
+                flex: 2;
+                border: none;
+                height: 100vh;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <iframe
+                src="http://localhost:8501"
+                class="left"
+                allow="fullscreen"
+            ></iframe>
+            <iframe
+                id="vnc"
+                src="http://127.0.0.1:6080/vnc.html?&resize=scale&autoconnect=1&view_only=1&reconnect=1&reconnect_delay=2000"
+                class="right"
+                allow="fullscreen"
+            ></iframe>
+            <button
+                id="toggleViewOnly"
+                style="position: absolute; top: 10px; right: 10px; z-index: 1000"
+            >
+                Toggle Screen Control (Off)
+            </button>
+            <script>
+                document
+                    .getElementById("toggleViewOnly")
+                    .addEventListener("click", function () {
+                        var vncIframe = document.getElementById("vnc");
+                        var button = document.getElementById("toggleViewOnly");
+                        var currentSrc = vncIframe.src;
+                        if (currentSrc.includes("view_only=1")) {
+                            vncIframe.src = currentSrc.replace(
+                                "view_only=1",
+                                "view_only=0",
+                            );
+                            button.innerText = "Toggle Screen Control (On)";
+                        } else {
+                            vncIframe.src = currentSrc.replace(
+                                "view_only=0",
+                                "view_only=1",
+                            );
+                            button.innerText = "Toggle Screen Control (Off)";
+                        }
+                    });
+            </script>
+        </div>
+    </body>
+</html>
+
+--- End of ./static_content/index.html ---
+
+--- Start of ./.streamlit/config.toml ---
+[server]
+fileWatcherType = "auto"
+runOnSave = true
+
+[browser]
+gatherUsageStats = false
+
+--- End of ./.streamlit/config.toml ---
+
+
+--- File Tree ---
+./
+    xvfb_startup.sh
+    index.html
+    x11vnc_startup.sh
+    http_server.py
+    start_all.sh
+    novnc_startup.sh
+    tint2_startup.sh
+    entrypoint.sh
+    mutter_startup.sh
+    .config/
+        tint2/
+            tint2rc
+            applications/
+                gedit.desktop
+                terminal.desktop
+                firefox-custom.desktop
+    static_content/
+        index.html
+    .streamlit/
+        config.toml

@@ -102,4 +102,10 @@ ENV DISPLAY_NUM=$DISPLAY_NUM
 ENV HEIGHT=$HEIGHT
 ENV WIDTH=$WIDTH
 
+# Install Nginx
+RUN apt-get update && apt-get install -y nginx
+
+# Copy Nginx configuration
+COPY image/nginx.conf /etc/nginx/sites-available/default
+
 ENTRYPOINT [ "./entrypoint.sh" ]
