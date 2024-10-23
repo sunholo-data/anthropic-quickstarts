@@ -31,7 +31,6 @@ steps:
           apt-get -y upgrade && \
           apt-get -y install \
           build-essential \
-          # UI Requirements
           xvfb \
           xterm \
           xdotool \
@@ -40,7 +39,6 @@ steps:
           sudo \
           mutter \
           x11vnc \
-          # Python/pyenv reqs
           build-essential \
           libssl-dev  \
           zlib1g-dev \
@@ -56,12 +54,9 @@ steps:
           libxmlsec1-dev \
           libffi-dev \
           liblzma-dev \
-          # Network tools
           net-tools \
           netcat \
-          # PPA req
           software-properties-common && \
-          # Userland apps
           sudo add-apt-repository ppa:mozillateam/ppa && \
           sudo apt-get install -y --no-install-recommends \
           libreoffice \
